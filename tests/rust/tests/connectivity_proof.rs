@@ -75,8 +75,14 @@ fn deterministic_chaos_preserves_total_offline_semantics() {
         }
 
         let snapshot = watcher.snapshot();
-        assert_eq!(snapshot.mode, mode, "mode mismatch at operation {operation}");
-        assert_eq!(snapshot.state, exposed, "state mismatch at operation {operation}");
+        assert_eq!(
+            snapshot.mode, mode,
+            "mode mismatch at operation {operation}"
+        );
+        assert_eq!(
+            snapshot.state, exposed,
+            "state mismatch at operation {operation}"
+        );
     }
 
     assert_eq!(delivered.load(Ordering::Acquire), expected_transitions);
