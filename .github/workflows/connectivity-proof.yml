@@ -1,0 +1,370 @@
+name: DEN-2132 external connectivity proof
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '37 11 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-2132-connectivity-proof-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.2'
+
+jobs:
+  source-pin:
+    name: Immutable source and PR contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      repository: ${{ steps.pin.outputs.repository }}
+      commit: ${{ steps.pin.outputs.commit }}
+      pull_request: ${{ steps.pin.outputs.pull_request }}
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Use Node 22 for proof scripts
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Resolve immutable source pin
+        id: pin
+        run: node scripts/resolve-proof-source.mjs
+
+      - name: Check out the exact implementation and engine gitlinks
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ steps.pin.outputs.repository }}
+          ref: ${{ steps.pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Verify the checkout is still the exact open PR head
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-source-pin.mjs
+
+  typescript-node-browser:
+    name: TypeScript durable queue and real Chromium
+    needs: source-pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact opto-sync implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ needs.source-pin.outputs.repository }}
+          ref: ${{ needs.source-pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Use Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: source/clients/ts/package-lock.json
+
+      - name: Install the pinned native binding dependencies
+        working-directory: source/syncer.c/bindings/typescript
+        run: npm ci
+
+      - name: Build the exact TypeScript package
+        working-directory: source/clients/ts
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Run external Node durability, quota, chaos, and hook tests
+        env:
+          OPTO_SYNC_SOURCE: ${{ github.workspace }}/source
+        run: node --test tests/typescript/connectivity-proof.test.cjs
+
+      - name: Install real Chromium
+        working-directory: source/clients/ts
+        run: npx playwright install --with-deps chromium
+
+      - name: Run external browser reachability and IndexedDB proof
+        env:
+          OPTO_SYNC_SOURCE: ${{ github.workspace }}/source
+        run: node tests/browser/run-proof.cjs
+
+  dart:
+    name: Pure Dart listener and post-commit contract
+    needs: source-pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact opto-sync implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ needs.source-pin.outputs.repository }}
+          ref: ${{ needs.source-pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Install stable Dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: stable
+
+      - name: Resolve external Dart consumer
+        working-directory: tests/dart
+        run: dart pub get
+
+      - name: Format, analyze, and test the Dart consumer
+        working-directory: tests/dart
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos
+          dart test --reporter=expanded
+
+  rust-native-wasm:
+    name: Rust concurrency, panic isolation, and WASM consumer
+    needs: source-pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact opto-sync implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ needs.source-pin.outputs.repository }}
+          ref: ${{ needs.source-pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Show the Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+          rustfmt --version
+          cargo clippy --version
+
+      - name: Format, test, and lint the external Rust consumer
+        working-directory: tests/rust
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --all-targets --no-fail-fast
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Compile the dependency through a WebAssembly consumer
+        working-directory: tests/rust
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          cargo check --target wasm32-unknown-unknown --features wasm
+
+  flutter-api:
+    name: Flutter UI-agnostic platform-channel API
+    needs: source-pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact opto-sync implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ needs.source-pin.outputs.repository }}
+          ref: ${{ needs.source-pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Install pinned Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve the external Flutter consumer
+        working-directory: tests/flutter
+        run: flutter pub get
+
+      - name: Format, analyze, and test the Flutter bridge
+        working-directory: tests/flutter
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed .
+          flutter analyze --fatal-infos
+          flutter test --reporter=expanded
+
+  native-blank-app:
+    name: Native blank app (${{ matrix.platform }})
+    needs: source-pin
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-24.04
+          - platform: ios
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out external proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact opto-sync implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ needs.source-pin.outputs.repository }}
+          ref: ${{ needs.source-pin.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Install pinned Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Materialize a blank consumer app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/connectivity_proof"
+          flutter create \
+            --platforms=${{ matrix.platform }} \
+            --org dev.optosynctest \
+            --project-name connectivity_proof \
+            "$app"
+          cd "$app"
+          flutter pub add opto_sync_flutter_background \
+            --path "$GITHUB_WORKSPACE/source/clients/flutter_background"
+          cp "$GITHUB_WORKSPACE/tests/flutter_consumer/main.dart" lib/main.dart
+          dart format lib/main.dart
+
+      - name: Compile direct Kotlin and Java connectivity consumption
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/connectivity_proof"
+          main="$app/android/app/src/main/kotlin/dev/optosynctest/connectivity_proof/MainActivity.kt"
+          cat > "$main" <<'KOTLIN'
+          package dev.optosynctest.connectivity_proof
+
+          import dev.optosync.background.OptoSyncConnectivityWatcherJava
+          import io.flutter.embedding.android.FlutterActivity
+
+          class MainActivity : FlutterActivity() {
+              private var connectivity: OptoSyncConnectivityWatcherJava? = null
+
+              override fun onStart() {
+                  super.onStart()
+                  connectivity = OptoSyncConnectivityWatcherJava(applicationContext).also {
+                      it.start()
+                      it.setTotalOffline(true)
+                      it.setTotalOffline(false)
+                      it.refresh()
+                      it.snapshot()
+                  }
+              }
+
+              override fun onStop() {
+                  connectivity?.close()
+                  connectivity = null
+                  super.onStop()
+              }
+          }
+          KOTLIN
+          cd "$app"
+          flutter build apk --debug
+
+      - name: Compile direct Swift plus Objective-C plugin consumption
+        if: matrix.platform == 'ios'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/connectivity_proof"
+          cat > "$app/ios/Runner/AppDelegate.swift" <<'SWIFT'
+          import Flutter
+          import UIKit
+          import opto_sync_flutter_background
+
+          @main
+          @objc class AppDelegate: FlutterAppDelegate {
+            override func application(
+              _ application: UIApplication,
+              didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+            ) -> Bool {
+              OptoSyncBackgroundPlugin.registerTasks()
+              let connectivity = OptoSyncConnectivityWatcher.shared
+              connectivity.configureProbe(
+                urlString: "https://example.test/health",
+                timeoutMilliseconds: 4_000)
+              connectivity.start()
+              connectivity.setTotalOffline(true)
+              connectivity.setTotalOffline(false)
+              connectivity.refresh()
+              _ = connectivity.snapshot()
+              GeneratedPluginRegistrant.register(with: self)
+              return super.application(
+                application,
+                didFinishLaunchingWithOptions: launchOptions)
+            }
+          }
+          SWIFT
+          cd "$app"
+          flutter build ios --debug --no-codesign
