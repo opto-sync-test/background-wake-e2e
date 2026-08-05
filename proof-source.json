@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "repository": "opto-sync/opto-sync-clients",
+  "pullRequest": 73,
+  "commit": "4aa9d47d966bd36b2a5007d56b5f4cac71c5ff0d",
+  "linearIssue": "DEN-2132",
+  "contract": "connectivity-save-signals-v1"
+}
