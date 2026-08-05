@@ -37,7 +37,7 @@ fn deterministic_chaos_preserves_total_offline_semantics() {
 
     for operation in 0..5_000 {
         random = xorshift32(random);
-        if random % 5 == 0 {
+        if random.is_multiple_of(5) {
             let enabled = random & 8 != 0;
             let next_mode = if enabled {
                 ConnectivityMode::Offline
