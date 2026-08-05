@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:opto_sync_client/connectivity.dart';
 import 'package:test/test.dart';
 
