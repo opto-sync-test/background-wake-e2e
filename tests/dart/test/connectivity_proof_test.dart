@@ -12,65 +12,68 @@ int _xorshift32(int value) {
 }
 
 void main() {
-  test('5,000 deterministic operations preserve total-offline semantics', () async {
-    var clock = 0;
-    final watcher = ManualOptoSyncConnectivityWatcher(
-      now: () => DateTime.fromMillisecondsSinceEpoch(++clock),
-    );
-    final states = OptoSyncConnectivityState.values;
-    var random = 0x0f70c0de;
-    var automatic = OptoSyncConnectivityState.unknown;
-    var mode = OptoSyncConnectivityMode.automatic;
-    var exposed = OptoSyncConnectivityState.unknown;
-    var expectedTransitions = 0;
-    var deliveredTransitions = 0;
+  test(
+    '5,000 deterministic operations preserve total-offline semantics',
+    () async {
+      var clock = 0;
+      final watcher = ManualOptoSyncConnectivityWatcher(
+        now: () => DateTime.fromMillisecondsSinceEpoch(++clock),
+      );
+      final states = OptoSyncConnectivityState.values;
+      var random = 0x0f70c0de;
+      var automatic = OptoSyncConnectivityState.unknown;
+      var mode = OptoSyncConnectivityMode.automatic;
+      var exposed = OptoSyncConnectivityState.unknown;
+      var expectedTransitions = 0;
+      var deliveredTransitions = 0;
 
-    final subscription = watcher.changes.listen((snapshot) {
-      deliveredTransitions += 1;
-      expect(snapshot.changedAt.millisecondsSinceEpoch, greaterThan(0));
-    });
+      final subscription = watcher.changes.listen((snapshot) {
+        deliveredTransitions += 1;
+        expect(snapshot.changedAt.millisecondsSinceEpoch, greaterThan(0));
+      });
 
-    for (var index = 0; index < 5000; index += 1) {
-      random = _xorshift32(random);
-      if (random % 5 == 0) {
-        final enabled = random & 8 != 0;
-        final nextMode = enabled
-            ? OptoSyncConnectivityMode.offline
-            : OptoSyncConnectivityMode.automatic;
-        if (nextMode != mode) {
-          final nextExposed = enabled
-              ? OptoSyncConnectivityState.offline
-              : automatic;
-          if (nextExposed != exposed || nextMode != mode) {
-            expectedTransitions += 1;
+      for (var index = 0; index < 5000; index += 1) {
+        random = _xorshift32(random);
+        if (random % 5 == 0) {
+          final enabled = random & 8 != 0;
+          final nextMode = enabled
+              ? OptoSyncConnectivityMode.offline
+              : OptoSyncConnectivityMode.automatic;
+          if (nextMode != mode) {
+            final nextExposed = enabled
+                ? OptoSyncConnectivityState.offline
+                : automatic;
+            if (nextExposed != exposed || nextMode != mode) {
+              expectedTransitions += 1;
+            }
+            mode = nextMode;
+            exposed = nextExposed;
           }
-          mode = nextMode;
-          exposed = nextExposed;
+          watcher.setTotalOffline(enabled);
+        } else {
+          final state = states[random % states.length];
+          automatic = state;
+          if (mode == OptoSyncConnectivityMode.automatic && exposed != state) {
+            expectedTransitions += 1;
+            exposed = state;
+          }
+          watcher.publish(
+            state,
+            source: state == OptoSyncConnectivityState.internet
+                ? OptoSyncConnectivitySource.probe
+                : OptoSyncConnectivitySource.manual,
+          );
         }
-        watcher.setTotalOffline(enabled);
-      } else {
-        final state = states[random % states.length];
-        automatic = state;
-        if (mode == OptoSyncConnectivityMode.automatic && exposed != state) {
-          expectedTransitions += 1;
-          exposed = state;
-        }
-        watcher.publish(
-          state,
-          source: state == OptoSyncConnectivityState.internet
-              ? OptoSyncConnectivitySource.probe
-              : OptoSyncConnectivitySource.manual,
-        );
+
+        expect(watcher.snapshot.mode, mode, reason: 'operation $index');
+        expect(watcher.snapshot.state, exposed, reason: 'operation $index');
       }
 
-      expect(watcher.snapshot.mode, mode, reason: 'operation $index');
-      expect(watcher.snapshot.state, exposed, reason: 'operation $index');
-    }
-
-    expect(deliveredTransitions, expectedTransitions);
-    await subscription.cancel();
-    await watcher.close();
-  });
+      expect(deliveredTransitions, expectedTransitions);
+      await subscription.cancel();
+      await watcher.close();
+    },
+  );
 
   test('post-commit save signals remain immediate and UI-agnostic', () async {
     final watcher = ManualOptoSyncConnectivityWatcher(
