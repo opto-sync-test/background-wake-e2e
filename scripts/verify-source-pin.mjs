@@ -14,14 +14,16 @@ const checkedOut = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], {
 }).trim();
 assert.equal(checkedOut, pin.commit, 'source checkout does not match the immutable proof pin');
 
+// `git submodule status` deliberately encodes exactness in column zero:
+// a leading space is exact, `-` is uninitialized, `+` is a different commit,
+// and `U` is conflicted. Do not trim that marker before validating it.
 const submodules = execFileSync(
   'git',
   ['-C', source, 'submodule', 'status', '--recursive'],
   { encoding: 'utf8' },
 )
-  .trim()
   .split('\n')
-  .filter(Boolean);
+  .filter((line) => line.length > 0);
 assert.ok(submodules.length > 0, 'the pinned syncer.c source must be materialized');
 for (const line of submodules) {
   assert.equal(line[0], ' ', `submodule is not at its committed gitlink: ${line}`);
