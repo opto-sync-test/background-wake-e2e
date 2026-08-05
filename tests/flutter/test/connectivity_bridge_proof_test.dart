@@ -36,26 +36,23 @@ void main() {
     },
   );
 
-  test(
-    'custom Flutter hosts can publish link and verified internet',
-    () async {
-      final connectivity = OptoSyncFlutterConnectivity();
-      final states = <OptoSyncConnectivitySnapshot>[];
-      final subscription = connectivity.changes.listen(states.add);
+  test('custom Flutter hosts can publish link and verified internet', () async {
+    final connectivity = OptoSyncFlutterConnectivity();
+    final states = <OptoSyncConnectivitySnapshot>[];
+    final subscription = connectivity.changes.listen(states.add);
 
-      connectivity.publish(OptoSyncConnectivityState.link);
-      connectivity.publish(OptoSyncConnectivityState.link);
-      connectivity.publish(OptoSyncConnectivityState.link, verified: true);
+    connectivity.publish(OptoSyncConnectivityState.link);
+    connectivity.publish(OptoSyncConnectivityState.link);
+    connectivity.publish(OptoSyncConnectivityState.link, verified: true);
 
-      expect(states, hasLength(2));
-      expect(states.first.state, OptoSyncConnectivityState.link);
-      expect(states.last.state, OptoSyncConnectivityState.internet);
-      expect(states.last.hasVerifiedInternet, isTrue);
+    expect(states, hasLength(2));
+    expect(states.first.state, OptoSyncConnectivityState.link);
+    expect(states.last.state, OptoSyncConnectivityState.internet);
+    expect(states.last.hasVerifiedInternet, isTrue);
 
-      await subscription.cancel();
-      await connectivity.dispose();
-    },
-  );
+    await subscription.cancel();
+    await connectivity.dispose();
+  });
 
   test('probe configuration rejects credential-bearing endpoints', () {
     expect(
