@@ -1,0 +1,17 @@
+name: opto_sync_flutter_connectivity_external_proof
+publish_to: none
+
+environment:
+  sdk: ^3.12.1
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  opto_sync_flutter_background:
+    path: ../../source/clients/flutter_background
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0
