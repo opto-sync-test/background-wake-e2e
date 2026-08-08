@@ -1,0 +1,13 @@
+name: opto_sync_connectivity_external_proof
+publish_to: none
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  opto_sync_client:
+    path: ../../source/clients/dart
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
