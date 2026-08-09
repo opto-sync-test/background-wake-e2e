@@ -1,0 +1,12 @@
+[package]
+name = "opto-sync-connectivity-external-proof"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+wasm = ["opto-sync-connectivity/wasm"]
+
+[dependencies]
+opto-sync-connectivity = { path = "../../source/clients/rust-connectivity" }
