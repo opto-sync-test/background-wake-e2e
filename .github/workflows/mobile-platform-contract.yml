@@ -1,0 +1,48 @@
+name: mobile background platform contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-platform-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SOURCE_SHA: 6fe0a5be4d3e9d1552205b49fbd2cc0e3e5facab
+    steps:
+      - name: Check out test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact Opto Sync source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: opto-sync/opto-sync-clients
+          ref: 6fe0a5be4d3e9d1552205b49fbd2cc0e3e5facab
+          path: source
+          persist-credentials: false
+          show-progress: false
+
+      - name: Prove exact source identity
+        run: test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Re-run cross-language mobile safety policy
+        run: python3 source/scripts/check-mobile-background-contracts.py
+
+      - name: Verify native scheduling implementations remain present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s source/clients/flutter_background/android/src/main/kotlin/dev/optosync/background/OptoSyncWorker.kt
+          test -s source/clients/flutter_background/android/src/main/java/dev/optosync/background/OptoSyncWorkerJava.java
+          test -s source/clients/flutter_background/ios/Classes/OptoSyncBackgroundPlugin.swift
+          grep -F 'ExistingWorkPolicy.KEEP' source/clients/flutter_background/android/src/main/kotlin/dev/optosync/background/OptoSyncBackgroundPlugin.kt
+          grep -F 'BGProcessingTaskRequest' source/clients/flutter_background/ios/Classes/OptoSyncBackgroundPlugin.swift
