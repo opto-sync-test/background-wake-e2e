@@ -12,7 +12,7 @@ const source = path.join(root, 'source');
 const checkedOut = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], {
   encoding: 'utf8',
 }).trim();
-assert.equal(checkedOut, pin.commit, 'source checkout does not match the immutable proof pin');
+assert.equal(checkedOut, pin.commit, 'source checkout does not match the immutable merged proof pin');
 
 // `git submodule status` deliberately encodes exactness in column zero:
 // a leading space is exact, `-` is uninitialized, `+` is a different commit,
@@ -43,17 +43,21 @@ const response = await fetch(
 );
 assert.equal(response.status, 200, `GitHub PR lookup failed: ${response.status}`);
 const pullRequest = await response.json();
-assert.equal(pullRequest.state, 'open', 'the source proof PR must remain open');
-assert.equal(pullRequest.head.sha, pin.commit, 'the source PR head moved past the tested pin');
+assert.equal(pullRequest.state, 'closed', 'the source proof PR must be closed after delivery');
+assert.ok(pullRequest.merged_at, 'the source proof PR must be merged, not merely closed');
+assert.equal(pullRequest.head.sha, pin.candidateHead, 'the reviewed source candidate head changed');
+assert.equal(pullRequest.merge_commit_sha, pin.commit, 'the proof pin is not the PR merge commit');
 assert.equal(pullRequest.base.ref, 'main');
-assert.equal(pullRequest.draft, true, 'the implementation remains draft while proof runs');
+assert.equal(pullRequest.draft, false, 'the implementation must have left draft before merge');
 
 process.stdout.write(
   `${JSON.stringify(
     {
       repository: pin.repository,
       pullRequest: pin.pullRequest,
+      candidateHead: pin.candidateHead,
       commit: pin.commit,
+      mergedAt: pullRequest.merged_at,
       submodules,
       sourcePrUrl: pullRequest.html_url,
     },
