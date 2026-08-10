@@ -8,6 +8,10 @@ target/
 build/
 .zed/
 .vendor/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
 
 # Local materialization of the immutable product source pin
 source/
